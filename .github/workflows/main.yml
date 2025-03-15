@@ -1,0 +1,99 @@
+name: main
+
+on:
+  push:
+    branches:
+      - main 
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  backend-build:
+    name: Build & Test Backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Up JDK 17
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Build Backend with Maven
+        working-directory: resume-ai-backend
+        run: mvn clean package -DskipTests
+
+      - name: Build Backend Docker Image
+        working-directory: resume-ai-backend
+        run: docker build -t my-backend:latest .
+
+      - name: Save Backend Docker Image
+        run: docker save -o backend.tar my-backend:latest
+
+      - name: Upload Backend Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: backend-image
+          path: backend.tar
+
+  frontend-build:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set Up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install Dependencies & Build Frontend
+        working-directory: resume_frontend
+        run: |
+          npm install
+          npm run build
+
+      - name: Build Frontend Docker Image
+        working-directory: resume_frontend
+        run: docker build -t my-frontend:latest .
+
+      - name: Save Frontend Docker Image
+        run: docker save -o frontend.tar my-frontend:latest
+
+      - name: Upload Frontend Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: frontend-image
+          path: frontend.tar
+
+  deploy:
+    name: Deploy Locally
+    needs: [backend-build, frontend-build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Backend Image
+        uses: actions/download-artifact@v3
+        with:
+          name: backend-image
+          path: backend
+
+      - name: Download Frontend Image
+        uses: actions/download-artifact@v3
+        with:
+          name: frontend-image
+          path: frontend
+
+      - name: Load Docker Images
+        run: |
+          docker load -i backend/backend.tar
+          docker load -i frontend/frontend.tar
+
+      - name: Start Services Using Docker Compose
+        run: docker-compose up -d
